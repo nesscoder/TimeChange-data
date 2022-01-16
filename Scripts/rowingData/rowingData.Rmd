@@ -1,0 +1,214 @@
+---
+title: "RowingData"
+author: "Elan Ness-Cohn"
+date: "12/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(devtools)
+library(matrixStats)
+library(fasano.franceschini.test)
+setwd("~/Desktop/TimeChange/")
+load_all()
+```
+
+## Rowing Data
+
+```{r, echo = F, warning = F}
+
+# load Rowing Data at Varying Stokerates
+rowData <- read.csv("~/Desktop/TimeChange-data/Data/rowingData/RowingData_20_22_24_2020-12-25.csv")
+rowDataFiltered <- rowData %>%
+  separate(col = Force.Curve.Data.Points..Newtons., into = paste0("TP_", 1:60), sep = " ") %>%
+  filter(Stroke.Rate..s.m. == 20 & Peak.Force..Newtons. > 390 | Stroke.Rate..s.m. == 24 & Peak.Force..Newtons. > 500 & Peak.Force..Newtons. < 580 | Stroke.Rate..s.m. == 26 & Peak.Force..Newtons. > 580)
+
+hist(rowDataFiltered[rowDataFiltered$Stroke.Rate..s.m. == 20, "Peak.Force..Newtons."])
+hist(rowDataFiltered[rowDataFiltered$Stroke.Rate..s.m. == 24, "Peak.Force..Newtons."])
+hist(rowDataFiltered[rowDataFiltered$Stroke.Rate..s.m. == 26, "Peak.Force..Newtons."])
+
+# load Power 10 Rowing Data
+rowDataPower <- read.csv("~/Desktop/TimeChange-data/Data/rowingData/RowingData_power10.csv")
+rowDataFilteredPower10 <- rowDataPower %>%
+  separate(col = Force.Curve.Data.Points..Newtons., into = paste0("TP_", 1:60), sep = " ") %>%
+  filter(Stroke.Rate..s.m. %in% c(26))
+
+colPal <- c("#868686FF", "#CD534CFF", "#0073C2FF","#EFC000FF")
+
+pdf(file = "~/Desktop/TimeChange-data/Results/rowingData/rowing.pdf",
+    width = 6,
+    height = 6)
+
+p1 <- sapply(1:nrow(rowDataFiltered), function(i) {
+  
+  plotRange <- range(c(as.numeric(unlist(unname(rowDataFiltered[, 16:(46 + 15)]))),
+                       as.numeric(unlist(unname(rowDataFilteredPower10[, 16:(46 + 15)])))), 
+                     na.rm = T)
+  if (i == 1) {
+    plot(as.numeric(unlist(unname(rowDataFiltered[i, 16:(46 + 15)]))),
+      type = "l",
+      ylim = plotRange,
+      lwd = 1.5,
+      xlab = "Idx Time",
+      ylab = "Newtons",
+      main = "Newtons vs Idx Stoke Time  \n at 20, 24, and 26 strokes/min",
+      col = colPal[as.factor(rowDataFiltered$Stroke.Rate..s.m.)[i]]
+    )
+  }
+  else {
+    points(as.numeric(unlist(unname(rowDataFiltered[i, 16:(46 + 15)]))),
+      type = "l",
+      lwd = 1.5,
+      col = colPal[as.factor(rowDataFiltered$Stroke.Rate..s.m.)[i]]
+    )
+  }
+})
+
+p2 <- sapply(1:nrow(rowDataFilteredPower10), function(i) {
+  points(as.numeric(unlist(unname(rowDataFilteredPower10[i, 16:(46 + 15)]))),
+         type = "l",
+         lwd = 1.5,
+         col = colPal[4])
+})
+legend("topright", legend=rev(c("20 s/m", "24 s/m","26 s/m","26 s/m - Power 10")),
+       inset = 0.02,
+       col=rev(colPal), 
+       lty=1,
+       lwd = 2,
+       text.font = 2,
+       cex=0.8,
+       box.lty=0)
+box(lwd = 3)
+
+dev.off()
+```
+
+## TimeChange
+
+```{r, warning = F}
+
+gridOfComparisons <- expand.grid(c("20","24","26","26p"),
+                                 c("20","24","26","26p"))
+
+minLag <- 1
+maxLag <- 15
+dimension <- 2
+replicates_oldStroke <- 5
+replicates_newStroke <- 1
+apply(gridOfComparisons,1,function(strokes){
+  strokeRate_oldStroke <- strokes[1]
+  strokeRate_newStroke <- strokes[2]
+
+if(strokeRate_oldStroke == "26p"){
+    calibrationRowData <- rowDataPower %>%
+  separate(col = Force.Curve.Data.Points..Newtons.,into = paste0("TP_",1:60),sep = " ") %>%
+  filter(Stroke.Rate..s.m. %in% c(26))
+  strokeRate_oldStroke <- "26p"
+}else{
+  calibrationRowData <- rowData %>%
+  separate(col = Force.Curve.Data.Points..Newtons., into = paste0("TP_", 1:60), sep = " ") %>%
+  filter(Stroke.Rate..s.m. %in% c(strokeRate_oldStroke))
+}
+
+
+if(strokeRate_newStroke == "26p"){
+  newStrokeRowData <- rowDataPower %>%
+  separate(col = Force.Curve.Data.Points..Newtons.,into = paste0("TP_",1:60),sep = " ") %>%
+  filter(Stroke.Rate..s.m. %in% c(26))
+} else{
+  newStrokeRowData <- rowData %>%
+  separate(col = Force.Curve.Data.Points..Newtons., into = paste0("TP_", 1:60), sep = " ") %>%
+  filter(Stroke.Rate..s.m. %in% c(strokeRate_newStroke))
+}
+
+plotColors <- c("#868686FF", "#CD534CFF", "#0073C2FF","#EFC000FF")
+names(plotColors) <- c("20","24","26","26p")
+plotColors <- c(plotColors[as.character(strokeRate_oldStroke)], plotColors[as.character(strokeRate_newStroke)])
+
+start <- Sys.time()
+
+calibration <- calibrationRowData[16:(46 + 15)] %>%
+  mutate_if(is.character, as.numeric) %>%
+  purrr::keep(~ sum(!is.na(.x)) > 2) %>%
+  gather(factor_key = TRUE) %>%
+  group_by(key) %>%
+  summarise(mean = mean(value, na.rm = T), sd = sd(value, na.rm = T), .groups = "drop")
+
+newStroke <- newStrokeRowData[16:(46 + 15)] %>%
+  mutate_if(is.character, as.numeric) %>%
+  purrr::keep(~ sum(!is.na(.x)) > 2) %>%
+  gather(factor_key = TRUE) %>%
+  group_by(key) %>%
+  summarise(mean = mean(value, na.rm = T), sd = sd(value, na.rm = T), .groups = "drop")
+
+
+
+control <- t(replicate(replicates_oldStroke, apply(calibration, 1, function(msd) {
+  rnorm(1, mean = as.numeric(msd[2]), sd = as.numeric(msd[3]))
+})))
+
+condition <- newStrokeRowData[16:(46 + 15)] %>%
+  mutate_if(is.character, as.numeric) %>%
+  purrr::keep(~ sum(!is.na(.x)) > 2) %>%
+  slice_sample(n = 1)
+condition <- condition[!is.na(condition)]
+condition <- matrix(unname(unlist(condition)), nrow = 1)
+
+# select embedding with min curvature
+controlCurvatures <- getMedianCurvatureFromReplicateResamplings(TimeSeriesDF = control, minLag = minLag, maxLag = maxLag, dimension = dimension)
+conditionCurvatures <- getMedianCurvatureFromReplicateResamplings(TimeSeriesDF = condition, minLag = minLag, maxLag = maxLag, dimension = dimension)
+sel <- which.min(c(min(controlCurvatures), min(conditionCurvatures)))
+tau <- which.min(data.frame(controlCurvatures, conditionCurvatures)[, sel])
+
+pDataPlot <- rbind(
+  getEmbedding(data = control, label = "cont", tau = tau),
+  getEmbedding(data = condition, label = "mut", tau = tau)
+)
+
+# 2-D KS Test
+contData <- pDataPlot %>%
+  filter(condition == "cont")
+
+mutData <- pDataPlot %>%
+  filter(condition == "mut")
+
+output <- fasano.franceschini.test(contData[, 1:2], mutData[, 1:2])
+
+output$p.value < 0.05
+
+pdf(file = paste0("~/Desktop/TimeChange-data/Results/rowingData/",strokeRate_oldStroke,"vs",strokeRate_newStroke,".pdf"),
+    width = 4,
+    height = 4)
+par(pty = "s")
+for (i in 1:nrow(pDataPlot)) {
+  if (i == 1) {
+    plot(
+      x = pDataPlot$x[i],
+      y = pDataPlot$y[i],
+      main = paste0("p-val = ", signif(output$p.value, digits = 3)),
+      xlab = "f(t)",
+      ylab = paste0("f(t+", tau, ")"),
+      xlim = range(pDataPlot$x),
+      ylim = range(pDataPlot$y),
+      pch = 21,
+      cex = 2,
+      bg = alpha(plotColors[as.factor(pDataPlot$condition)[i]],alpha = 0.7),
+      asp = 1
+    )
+  } else {
+    points(
+      x = pDataPlot$x[i],
+      y = pDataPlot$y[i],
+      pch = 21,
+      cex = 2,
+      bg = alpha(plotColors[as.factor(pDataPlot$condition)[i]],alpha = 0.7)
+    )
+  }
+}
+output$p.value
+Sys.time() - start
+dev.off()
+})
+```
