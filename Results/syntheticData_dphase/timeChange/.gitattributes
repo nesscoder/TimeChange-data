@@ -1,0 +1,2 @@
+results_syntheticData_dphase_2_48_rep_2_nl_0.1.RData filter=lfs diff=lfs merge=lfs -text
+results_syntheticData_dphase_2_48_rep_2_nl_0.1.RDataResults/syntheticData_dphase/timeChange/\*.RData filter=lfs diff=lfs merge=lfs -text
