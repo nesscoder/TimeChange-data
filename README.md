@@ -2,10 +2,10 @@
 
 #### Elan Ness-Cohn, Dae-sung Hwangbo, James Kwon, Marta Iwanaszko, William Kath, Ravi Allada, and Rosemary Braun
 
+<!-- 
 ------------------------------------------------------------------------
-
+-->
 <!-- badges: start -->
-
 <!-- badges: end -->
 
 ------------------------------------------------------------------------
